@@ -110,7 +110,7 @@ class DumpBlocks:
     # parse out properties from main section text
     def set_section_properties (self, section):
         for line in section.text:
-            key_val = re.split (':\s+', line)
+            key_val = re.split (r':\s+', line)
             if (len (key_val) != 2):
                 continue
             key = self.safer_name (key_val[0])
@@ -143,7 +143,7 @@ class DumpBlocks:
             self.blocks[section_start:section_start+3] = [section]
 
     def config_file_subsection (self, line):
-        return re.fullmatch ('(server|groups|databases|assignments|hosts|clusters|keystore|kms|tokenizer|mimetypes)(_[0-9])?\.xml', line)
+        return re.fullmatch (r'(server|groups|databases|assignments|hosts|clusters|keystore|kms|tokenizer|mimetypes)(_[0-9])?\.xml', line)
 
     # find the secondary sections
     def create_subsections_recursive (self, start_at=0):
@@ -257,7 +257,7 @@ class DumpBlocks:
 
             # get rid of leading blank lines in text blocks
             if block.type == 'text':
-                while block.has_lines() and re.fullmatch ('\s*', block.text[0]):
+                while block.has_lines() and re.fullmatch (r'\s*', block.text[0]):
                     block.text[0:1] = []
 
             # update from preceding block
@@ -366,7 +366,7 @@ class DumpBlocks:
         file_number = 1
         for line in lines:
             line_count += 1
-            m = re.match('\s*<(/?)([^>\s]+)', line)
+            m = re.match(r'\s*<(/?)([^>\s]+)', line)
             if m:
                 end_slash, element_name = m.group(1), m.group(2)
                 #print ('   match ' + end_slash + element_name)
