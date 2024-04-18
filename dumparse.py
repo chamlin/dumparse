@@ -1,5 +1,4 @@
-#!/opt/homebrew/bin/python3
-#!/opt/local/bin/python
+#!/usr/bin/python3
 #!/opt/anaconda3/bin/python
 
 import re
@@ -132,7 +131,9 @@ class DumpBlocks:
 
     # find the main sections
     def create_sections (self):
-        while ((section_start := self.find_type_sequence (['bigsep', 'text', 'bigsep'])) >= 0):
+        #while ((section_start := self.find_type_sequence (['bigsep', 'text', 'bigsep'])) >= 0):
+        section_start = self.find_type_sequence (['bigsep', 'text', 'bigsep'])
+        while section_start >= 0:
             section = self.blocks[section_start+1]
             section.type = 'section'
             if (section.text[0].startswith ('Report Time')):
@@ -141,6 +142,7 @@ class DumpBlocks:
                 section.type = 'host'
             self.set_section_properties (section)
             self.blocks[section_start:section_start+3] = [section]
+            section_start = self.find_type_sequence (['bigsep', 'text', 'bigsep'])
 
     def config_file_subsection (self, line):
         return re.fullmatch (r'(server|groups|databases|assignments|hosts|clusters|keystore|kms|tokenizer|mimetypes)(_[0-9])?\.xml', line)
@@ -162,7 +164,9 @@ class DumpBlocks:
             'Configuration': True,
         }
         
-        if ((subsection_start := self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)) >= 0):
+        #if ((subsection_start := self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)) >= 0):
+        subsection_start = self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)
+        if subsection_start >= 0:
             text_block = self.blocks[subsection_start+1]
             #print ('check: ', text_block.text[0], '->', subsection_titles.get (text_block.text[0], 'nil'))
             if self.config_file_subsection (text_block.first_line()):
@@ -198,7 +202,9 @@ class DumpBlocks:
 
         start_at = 0
         
-        while ((subsection_start := self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)) >= 0):
+        # while ((subsection_start := self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)) >= 0):
+        subsection_start = self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)
+        while subsection_start >= 0:
             text_block = self.blocks[subsection_start+1]
             #print ('check: ', text_block.text[0], '->', subsection_titles.get (text_block.text[0], 'nil'))
             if self.config_file_subsection (text_block.first_line()):
@@ -211,6 +217,7 @@ class DumpBlocks:
                 subsection.type = 'subsection'
                 self.blocks[subsection_start:subsection_start+3] = [subsection]
             start_at = subsection_start+1
+            subsection_start = self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)
 
 
 
@@ -338,8 +345,9 @@ class DumpBlocks:
 
     # remove notices that a file isn't there (checks for all older versions)
     def setup_config_files (self):
-        block_number = -1
-        while (block_number := block_number + 1) < len (self.blocks):
+        # while (block_number := block_number + 1) < len (self.blocks):
+        block_number = 0
+        while block_number < len (self.blocks):
             block = self.blocks[block_number]
             if block.type == 'config_file' and self.has_block_number (block_number):
                 next_block = self.blocks[block_number+1]
@@ -356,6 +364,7 @@ class DumpBlocks:
                 if next_block.type == 'text':
                     block.text = next_block.text
                     self.remove_block_number(block_number+1)
+            block_number = block_number + 1
 
     def get_check_xml (self, block):
         # print ('checking block type: ' + block.type)
