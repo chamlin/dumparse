@@ -56,7 +56,6 @@ class DumpBlocks:
         self.blocks = []
     
     def add_line (self, line, line_number):
-        #print ('line (', line, ')!\n')
         if line == '===========================================================================' or line == ' =================================================================':
             #print ('bingo (', line, ')!\n')
             self.blocks.append (DumpBlock('subsep'))
@@ -70,7 +69,8 @@ class DumpBlocks:
             self.blocks.append (DumpBlock('bigsep'))
             self.blocks[-1].start_line = line_number
         else:
-            if not self.blocks[0] or self.blocks[-1].type != 'text':
+            if len (self.blocks) < 1 or self.blocks[-1].type != 'text':
+                if len (line) == 0:  return
                 self.blocks.append (DumpBlock ('text'))
                 self.blocks[-1].start_line = line_number
             
@@ -527,16 +527,25 @@ with open(args.dumpfile, encoding='utf-8') as dumpfile:
         str = line.strip()
         blocks.add_line (str, line_number)
 
+if args.debug:  blocks.dump()
+
+if args.debug:  print ('create_sections')
 blocks.create_sections()
+if args.debug:  print ('create_subsections')
 blocks.create_subsections()
+if args.debug:  print ('reconstitute_database_topology')
 blocks.reconstitute_database_topology()
+if args.debug:  print ('remove_missing_configurations')
 blocks.remove_missing_configurations()
+if args.debug:  print ('context_run_through')
 blocks.context_run_through()
+if args.debug:  print ('setup_config_files')
 blocks.setup_config_files()
+if args.debug:  print ('get_check_xml_blocks')
 blocks.get_check_xml_blocks()
-blocks.write_files()
 
 if args.debug:  blocks.dump()
 
+blocks.write_files()
 
 
