@@ -147,41 +147,8 @@ class DumpBlocks:
     def config_file_subsection (self, line):
         return re.fullmatch (r'(server|groups|databases|assignments|hosts|clusters|keystore|kms|tokenizer|mimetypes)(_[0-9])?\.xml', line)
 
-    # find the secondary sections
-    def create_subsections_recursive (self, start_at=0):
-        subsection_titles = {
-            'Host Status': True,
-            'App Server Status': True,
-            'Database Topology': True,
-            'Forest Status': True,
-            'Trigger Definitions': True,
-            'CPF Domains': True,
-            'CPF Pipelines': True,
-            'FlexRep Domains': True,
-            'SQL Schemas': True,
-            'SQL Views': True,
-            'XML Schemas': True,
-            'Configuration': True,
-        }
-        
-        #if ((subsection_start := self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)) >= 0):
-        subsection_start = self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)
-        if subsection_start >= 0:
-            text_block = self.blocks[subsection_start+1]
-            #print ('check: ', text_block.text[0], '->', subsection_titles.get (text_block.text[0], 'nil'))
-            if self.config_file_subsection (text_block.first_line()):
-                subsection = self.blocks[subsection_start+1]
-                subsection.type = 'config_file'
-                subsection.properties['filename'] = subsection.text[0]
-                self.blocks[subsection_start:subsection_start+3] = [subsection]
-                self.create_subsections (subsection_start+1)
-            elif subsection_titles.get (text_block.first_line(), False):
-                subsection = self.blocks[subsection_start+1]
-                subsection.type = 'subsection'
-                self.blocks[subsection_start:subsection_start+3] = [subsection]
-                self.create_subsections (subsection_start+1)
-            else:
-                self.create_subsections (subsection_start+1)
+    def log_file_subsection (self, line):
+        return re.fullmatch (r'.*ErrorLog\.txt', line)
 
     # find the secondary sections
     def create_subsections (self):
@@ -198,6 +165,7 @@ class DumpBlocks:
             'SQL Views': True,
             'XML Schemas': True,
             'Configuration': True,
+            'Log Files': True,
         }
 
         start_at = 0
@@ -210,6 +178,11 @@ class DumpBlocks:
             if self.config_file_subsection (text_block.first_line()):
                 subsection = self.blocks[subsection_start+1]
                 subsection.type = 'config_file'
+                subsection.properties['filename'] = subsection.text[0]
+                self.blocks[subsection_start:subsection_start+3] = [subsection]
+            elif self.log_file_subsection (text_block.first_line()):
+                subsection = self.blocks[subsection_start+1]
+                subsection.type = 'log_file'
                 subsection.properties['filename'] = subsection.text[0]
                 self.blocks[subsection_start:subsection_start+3] = [subsection]
             elif subsection_titles.get (text_block.first_line(), False):
@@ -366,6 +339,20 @@ class DumpBlocks:
                     self.remove_block_number(block_number+1)
             block_number = block_number + 1
 
+    # sets up log files
+    def setup_log_files (self):
+        # while (block_number := block_number + 1) < len (self.blocks):
+        block_number = 0
+        while block_number < len (self.blocks):
+            block = self.blocks[block_number]
+            if block.type == 'log_file' and self.has_block_number (block_number):
+                next_block = self.blocks[block_number+1]
+                if next_block.type == 'text':
+                    block.text = next_block.text
+                    self.remove_block_number(block_number+1)
+                    block.properties['filename'] = 'ErrorLog.txt'
+            block_number = block_number + 1
+
     def get_check_xml (self, block):
         # print ('checking block type: ' + block.type)
         lines = block.text
@@ -452,6 +439,13 @@ class DumpBlocks:
                     path = 'Support-Dump/' + block.context['group'] + '/' + block.context['host'] + '/Configuration'
                     for filekey in block.files.keys():
                         self.write_file (path, filekey, block.files[filekey][0])
+                    block.properties['written'] = True
+            elif block.type == 'log_file':
+                # TODO better check of needed properties for path
+                # Support-Dump/_group_/_host_/_filename_
+                if 'group' in block.context:
+                    path = 'Support-Dump/' + block.context['group'] + '/' + block.context['host'] + '/Logs'
+                    self.write_file (path, block.properties['filename'], block.text)
                     block.properties['written'] = True
             elif block.type == 'appserver':
                 # TODO better check of needed properties for path
@@ -541,11 +535,15 @@ if args.debug:  print ('context_run_through')
 blocks.context_run_through()
 if args.debug:  print ('setup_config_files')
 blocks.setup_config_files()
+if args.debug:  print ('setup_log_files')
+blocks.setup_log_files()
 if args.debug:  print ('get_check_xml_blocks')
 blocks.get_check_xml_blocks()
 
 if args.debug:  blocks.dump()
 
 blocks.write_files()
+
+
 
 
