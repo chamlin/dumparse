@@ -1,0 +1,156 @@
+<export><workspace name="dumparse"><query name="stuck transactions" focus="true" listorder="1" taborder="1" active="true" database="14234498638695498242" server="3633016606993833090" database-name="Documents" server-name="App-Services" mode="xquery" optimize="1">xquery version "1.0-ml";
+declare namespace fs = 'http://marklogic.com/xdmp/status/forest';
+(:
+    this assumes you run against a db with a single parsed dump loaded
+:)
+let $collection := 'exp'
+let $xmls := cts:search (/fs:forest-status, cts:collection-query ($collection))
+let $num-xmls := fn:count ($xmls)
+
+return (
+    if ($num-xmls &lt; 2) then
+        'Total of '||$num-xmls||' forest-status results found for collection '||$collection||'; check not run.'
+    else
+        let $problem-forests := $xmls[fs:forest-id = fn:distinct-values ($xmls//fs:coordinator-id/fn:data()) and fs:state != 'open']
+        return
+            if (fn:count ($problem-forests) &gt; 0) then
+                for $coordinating-not-open in $problem-forests
+                let $coordinator-id := $coordinating-not-open/fs:forest-id/fn:data()
+                return
+                    let $acting-master := $xmls[fs:forest-id/fn:data() = $coordinating-not-open/fs:current-master-forest/fn:data()]
+                    let $transaction-dts := 
+                       for $dt in ($xmls//fs:transaction-participant[fs:coordinator-id = $coordinator-id]/fs:min-commit-timestamp/fn:data() ! xdmp:timestamp-to-wallclock (.))
+                       order by $dt ascending
+                       return $dt
+                    return (
+                        'Consider flipping '||$acting-master/fs:forest-name/fn:string()||' to '||$coordinating-not-open/fs:forest-name/fn:string()||' to clear stuck transaction.', '',
+                        'Transaction timestamps affected: ', $transaction-dts
+                    )
+            else 'Check run for collection '||$collection||', no problem found.'
+)
+
+
+    </query><query name="app server threads/queue" focus="false" listorder="2" taborder="2" active="true" database="12283477465488565638" server="3633016606993833090" database-name="01711321-faults-meters" server-name="App-Services" mode="xquery" optimize="1">xquery version "1.0-ml";
+(:
+get app server threads and queue count
+:)</query><query name="normnalize databases.xml" focus="false" listorder="3" taborder="3" active="true" database="14234498638695498242" server="3633016606993833090" database-name="Documents" server-name="App-Services" mode="xquery" optimize="1">(:
+outputs a somewhat normalized databases.xml, should be good for diffing
+set $debug to true if you want to see the sort keys
+set $collection to the collection that contains the databases.xml file
+:)
+declare namespace db='http://marklogic.com/xdmp/database';
+declare namespace fs = 'http://marklogic.com/xdmp/status/forest';
+declare namespace a = 'http://marklogic.com/xdmp/assignments';
+
+(: set the collection variable to limit to the correct loaded dump :)
+
+declare option xdmp:indent 'yes';
+
+declare variable $collection := 'ihs';
+declare variable $debug := fn:false();
+
+
+declare function local:get-file ($collection as xs:string, $file as xs:string, $limit) {
+    let $uris := cts:uri-match ('*/'||$file, 'limit='||$limit, cts:collection-query ($collection))
+    return fn:doc ($uris)
+};
+
+declare function local:sort-key ($node as node()) {
+  typeswitch($node)
+      case element() return 
+          if (fn:node-name ($node) eq xs:QName ('db:database')) then
+              fn:string ($node/db:database-name)
+          else if (fn:node-name ($node) = (xs:QName ('db:field'), xs:QName ('db:range-field-index'))) then
+              fn:string ($node/db:field-name)
+          else if (fn:node-name ($node) eq xs:QName ('db:field-path')) then
+              fn:string ($node/db:path)
+          else if (fn:node-name ($node) eq xs:QName ('db:path-namespace')) then
+              concat(fn:string($node/db:namespace-uri), '=', fn:string($node/db:prefix))
+          else if (fn:node-name ($node) eq xs:QName ('db:forest-id')) then
+              fn:count ($node/preceding-sibling::db:forest-id)
+          else if (fn:exists ($node/db:localname)) then
+              fn:string-join (($node/db:localname,$node/db:parent-localname,$node/db:namespace-uri)/fn:string(), '+')
+          else
+              fn:local-name ($node)
+      case attribute() return 
+          fn:local-name ($node)
+      default return fn:string ($node)
+ 
+};
+
+declare function local:expand-element-by-localname ($e as element()) {
+    let $localnames :=
+            for $s in $e/db:localname/fn:string()
+            for $t in fn:tokenize (fn:normalize-space ($s), ' ')
+            return $t
+    return (
+        if (fn:count ($localnames) &lt;= 1) then
+            $e
+        else 
+            for $ln in $localnames 
+            return
+                element { fn:node-name ($e) } {
+                    $e/@*,
+                    for $e in $e/node()
+                    order by local:sort-key ($e)
+                    return
+                        if (fn:node-name ($e) eq xs:QName ('db:localname')) then 
+                            &lt;db:localname&gt;{$ln}&lt;/db:localname&gt;
+                        else 
+                            $e
+                }
+    )
+};
+
+
+declare function local:change ($node, $axml) {
+  typeswitch($node)
+      case document-node() return 
+          local:change ($node/*, $axml)
+      case processing-instruction() return 
+          $node
+      case comment() return
+          $node
+      case text() return 
+          if (fn:node-name ($node/parent::*) = $local:numeric-masked) then
+                '#######'
+          else if (fn:node-name ($node/parent::*) = ('db:forest-id' ! xs:QName (.))) then
+                ($axml//a:assignment[a:forest-id/fn:data() = xs:unsignedLong($node)]/a:forest-name/fn:string(), '#######')[1]
+          else 
+                $node
+      case element() return 
+            element { fn:node-name ($node) } {
+                (: TODO?  convert the timestamp attribute? :)
+                for $a in $node/@*
+                order by local:sort-key ($a)
+                return $a
+                ,
+                let $kids := 
+                    for $n in $node/node()
+                    return
+                        if ($n/element()) then local:expand-element-by-localname ($n)
+                        else $n
+                for $k in $kids
+                let $sort-key := local:sort-key ($k)
+                order by $sort-key
+                return (
+                    if ($debug) then &lt;sort-key&gt;{$sort-key}&lt;/sort-key&gt; else (),
+                    local:change ($k, $axml)
+                )
+            }
+      default return fn:error(xs:QName("ERROR"), 'huh? local:change of '||xdmp:describe ($node, (), ()))
+};
+
+declare variable $local:numeric-masked := (
+    xs:QName ('db:security-database'), xs:QName ('db:schema-database'), xs:QName ('db:triggers-database'),
+    xs:QName ('db:backup-id')
+);
+
+
+let $dbxml := local:get-file ($collection, 'databases.xml', 1)
+let $axml := local:get-file ($collection, 'assignments.xml', 1)
+
+let $new := local:change ($dbxml, $axml)
+return $new</query><query name="Query 1" focus="false" listorder="4" taborder="4" active="true" database="14234498638695498242" server="3633016606993833090" database-name="Documents" server-name="App-Services" mode="xquery" optimize="1">xquery version "1.0-ml";
+
+cts:uri-match ('*',  (), cts:collection-query (()))</query></workspace></export>
