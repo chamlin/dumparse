@@ -55,7 +55,8 @@ class DumpContext:
         return self.properties[-1]
 
     def context_string (self):
-        return f'{tuple (zip (self.path, self.properties))}'
+        return repr (list (zip (self.path, self.properties)))
+        #return f'{tuple (zip (self.path, self.properties))}'[0:256]
 
     def get_top_context (self):
         # print (f'{path} ?== {self.path[-1]}')
@@ -349,7 +350,7 @@ class DumpBlocks:
                 block.context.pop_context()
                 hostname = re.sub (r'Hostname:\s+', '', self.block(block_number + 1).first_line())
                 block.context.push_context('host', {'host': hostname})
-                block.context.set_property('group', self.hostname_group_mapping[hostname])
+                block.context.set_property('group', self.hostname_group_mapping.get(hostname, 'UnknownGroup'))
                 # mark info and skip it
                 self.set_next_block_subtype (block_number, 'hostinfo')
                 block_number += 1
@@ -433,8 +434,8 @@ class DumpBlocks:
                     block.context.set_property ('forest-name', block.text[0])
                     host_id = self.get_xml_value ('host-id', block.text)
                     block.context.set_property ('host-id', host_id)
-                    block.context.set_property ('hostname', self.host_id_hostname_mapping[host_id])
-                    #block.text[0 : 1] = []
+                    # if this barfs KeyError ... is there a group with NO app-servers, so no mapping?  OK, default to the id
+                    block.context.set_property ('hostname', self.host_id_hostname_mapping.get(host_id, host_id))
                 elif block.context.at_top_context ('configuration') and block.first_line().startswith ('Configuration file'):
                     block.context.set_property ('subtype', 'missing-file')
                 else:
@@ -485,7 +486,7 @@ class DumpBlocks:
                 elif context.at_top_context ('forest-status'):
                     forest_name = block.text[0]
                     hostname = block.context.find_property('hostname')
-                    group = self.hostname_group_mapping[hostname]
+                    group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
                     path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
                     range = [1, len(block.text)-1]
                     block.files.append ([path, range])
@@ -514,7 +515,7 @@ class DumpBlocks:
         start_line = -1
         file_number = 1
         for line in lines:
-            print (f'block l{block.start_line}, line {line_number}')
+            #print (f'block l{block.start_line}, line {line_number}')
             # sometimes first line is not part of the file
             if context.get_top_context() in ['xml-schemas'] and line_number == 0:
                 line_number += 1
@@ -522,7 +523,7 @@ class DumpBlocks:
             m = re.match(r'\s*<(/?)([^>\s]+)', line)
             if m:
                 end_slash, element_name = m.group(1), m.group(2)
-                print ('   match ' + end_slash + element_name)
+                #print ('   match ' + end_slash + element_name)
                 if end_slash:
                     # end element
                     if current_element == element_name:
