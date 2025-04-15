@@ -421,8 +421,11 @@ class DumpBlocks:
                       or block.context.at_top_context ('sql-views')
                       or block.context.at_top_context ('xml-schemas')
                     ):
-                    block.context.set_property ('subtype', 'file')
-                    block.context.set_property ('database', block.text[0])
+                    # gotta have more than the db name
+                    if len (block.text) > 1:
+                            block.context.set_property ('subtype', 'file')
+                            block.context.set_property ('database', block.text[0])
+                    else:  block.context.set_property ('subtype', 'empty-db')
                     #block.text[0 : 1] = []
                 # these extra db name from file text first line and remove that line
                 elif block.context.at_top_context ('forest-status'):
@@ -486,19 +489,21 @@ class DumpBlocks:
                     path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
                     range = [1, len(block.text)-1]
                     block.files.append ([path, range])
-                elif context.at_top_context ('schemas'):
+                elif context.at_top_context ('xml-schemas'):
                     # TODO - xml files
                     self.get_check_xml (block)
                 elif context.at_top_context ('sql-schemas'):
                     # TODO - xml files
-                    self.get_check_xml (block)
+                    #self.get_check_xml (block)
+                    pass
                 elif context.at_top_context ('trigger-definitions'):
                     # TODO - xml files
-                    trigger_id = self.get_xml_value ('trgr:trigger-id', block.text)
-                    database = block.text[0]
-                    path = f'{context.find_property("out-dir")}/Trigger/{database}/Trigger-{trigger_id}.xml'
-                    range = [1, len(block.text)-1]
-                    block.files.append ([path, range])
+                    #trigger_id = self.get_xml_value ('trgr:trigger-id', block.text)
+                    #database = block.text[0]
+                    #path = f'{context.find_property("out-dir")}/Trigger/{database}/Trigger-{trigger_id}.xml'
+                    #range = [1, len(block.text)-1]
+                    #block.files.append ([path, range])
+                    pass
             block_number = block_number + 1
         
     def get_check_xml (self, block):
@@ -509,13 +514,15 @@ class DumpBlocks:
         start_line = -1
         file_number = 1
         for line in lines:
+            print (f'block l{block.start_line}, line {line_number}')
             # sometimes first line is not part of the file
-            if context.get_top_context() in ['sql-schemas']:
+            if context.get_top_context() in ['xml-schemas'] and line_number == 0:
+                line_number += 1
                 continue
             m = re.match(r'\s*<(/?)([^>\s]+)', line)
             if m:
                 end_slash, element_name = m.group(1), m.group(2)
-                #print ('   match ' + end_slash + element_name)
+                print ('   match ' + end_slash + element_name)
                 if end_slash:
                     # end element
                     if current_element == element_name:
@@ -525,9 +532,8 @@ class DumpBlocks:
                         #trigger_id = self.get_xml_value ('trgr:trigger-id', block.text)
                         # get filename
                         filename = element_name
-                        if context.at_top_context ('sql-schemas'):
-                            id = self.get_xml_value ('view:schema-id', lines[start_line : end_line])
-                            path = f'{context.find_property("out-dir")}/Schemas/{context.get_property("database")}/Schema-{id}.xml'
+                        if context.at_top_context ('xml-schemas'):
+                            path = f'{context.find_property("out-dir")}/Schemas/{context.get_property("database")}/Schema-{file_number}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         current_element = '---';
                         start_line = -1
