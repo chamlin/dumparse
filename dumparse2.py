@@ -481,11 +481,17 @@ class DumpBlocks:
                     block.files.append ([path, range])
                 elif context.at_top_context ('forest-status'):
                     forest_name = block.text[0]
-                    host = block.context.find_property('host')
-                    group = self.hostname_group_mapping[host]
-                    path = f'{context.find_property("out-dir")}/{group}/{host}/Forests/{forest_name}/Forest-Status.xml'
+                    hostname = block.context.find_property('hostname')
+                    group = self.hostname_group_mapping[hostname]
+                    path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
                     range = [1, len(block.text)-1]
                     block.files.append ([path, range])
+                elif context.at_top_context ('schemas'):
+                    # TODO - xml files
+                    self.get_check_xml (block)
+                elif context.at_top_context ('sql-schemas'):
+                    # TODO - xml files
+                    self.get_check_xml (block)
                 elif context.at_top_context ('trigger-definitions'):
                     # TODO - xml files
                     trigger_id = self.get_xml_value ('trgr:trigger-id', block.text)
@@ -493,9 +499,6 @@ class DumpBlocks:
                     path = f'{context.find_property("out-dir")}/Trigger/{database}/Trigger-{trigger_id}.xml'
                     range = [1, len(block.text)-1]
                     block.files.append ([path, range])
-                elif context.at_top_context ('sql-schemas'):
-                    # TODO - xml files
-                    self.get_check_xml (block)
             block_number = block_number + 1
         
     def get_check_xml (self, block):
