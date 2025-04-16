@@ -112,8 +112,6 @@ class DumpBlock:
         print ()
         print (f'>>>> {self.flags} {position}; type {self.type}; l{self.start_line}; context: ', self.context.context_string())
         if len(self.files) > 0:
-            for file in self.files:
-                #print (f'{self.files[0]}:  {self.files[1]}')
                 print ('>>>> ', repr (self.files))
         for line in self.text:
             print (line)
@@ -242,7 +240,7 @@ class DumpBlocks:
                 block.context.set_property ('host', self.get_hostname_from_host_info (self.blocks[block_number+1]))
                 block.context.push_context ('dump-info', {})
                 # mark heading and skip it
-                self.set_next_block_subtype (block_number, 'dump-info')
+                self.set_next_block_subtype (block_number, 'file')
                 block_number += 1
                 last_context = block.context
             # dump dump-info -> dump - cluster - app-servers
@@ -427,7 +425,6 @@ class DumpBlocks:
                             block.context.set_property ('subtype', 'file')
                             block.context.set_property ('database', block.text[0])
                     else:  block.context.set_property ('subtype', 'empty-db')
-                    #block.text[0 : 1] = []
                 # these extra db name from file text first line and remove that line
                 elif block.context.at_top_context ('forest-status'):
                     block.context.set_property ('subtype', 'file')
@@ -461,50 +458,49 @@ class DumpBlocks:
             if block.type == 'text' and context.get_property ('subtype') == 'file':
                 if context.at_top_context ('app-servers'):
                     path = f'{context.find_property("out-dir")}/{context.get_property("group")}/{context.get_property("host")}/App-Servers/{context.get_property("appserver")}-Status.xml'
-                    range = [1, len(block.text)-1]
-                    block.files.append ([path, range])
+                    block.files.append ([path, [1, len(block.text)-1]])
+                elif context.at_top_context ('dump-info'):
+                    path = f'{context.find_property("out-dir")}/Support-Request.txt'
+                    block.files.append ([path, [1, len(block.text)-1]])
                 elif context.at_top_context ('database-topology'):
                     path = f'{context.find_property("out-dir")}/Database-Topology.txt'
-                    range = [0, len(block.text)-1]
-                    block.files.append ([path, range])
+                    block.files.append ([path, [0, len(block.text)-1]])
                     if saw_database_topology == False:
                         block.context.set_property ('first-file', True)
                         saw_database_topology = True
                 elif context.at_top_context ('configuration'):
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Configuration/{context.get_property("filename")}'
-                    range = [0, len(block.text)-1]
-                    block.files.append ([path, range])
+                    block.files.append ([path, [0, len(block.text)-1]])
                 elif context.at_top_context ('logs'):
                     filename = re.sub (r'.*/', '', context.get_property ('filename'))
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Logs/{filename}'
-                    range = [0, len(block.text)-1]
-                    block.files.append ([path, range])
+                    block.files.append ([path, [0, len(block.text)-1]])
                 elif context.at_top_context ('host-status'):
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Host-Status.xml'
-                    range = [0, len(block.text)-1]
-                    block.files.append ([path, range])
+                    block.files.append ([path, [0, len(block.text)-1]])
                 elif context.at_top_context ('forest-status'):
-                    forest_name = block.text[0]
-                    hostname = block.context.find_property('hostname')
-                    group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
-                    path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
-                    range = [1, len(block.text)-1]
-                    block.files.append ([path, range])
+                    self.get_check_xml (block)
+
+                    #forest_name = block.text[0]
+                    #hostname = block.context.find_property('hostname')
+                    #group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
+                    #path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
+                    #block.files.append ([path, [1, len(block.text)-1]])
+                elif context.at_top_context ('cpf-domains'):
+                    self.get_check_xml (block)
                 elif context.at_top_context ('xml-schemas'):
-                    # TODO - xml files
+                    self.get_check_xml (block)
+                elif context.at_top_context ('sql-views'):
                     self.get_check_xml (block)
                 elif context.at_top_context ('sql-schemas'):
-                    # TODO - xml files
-                    #self.get_check_xml (block)
-                    pass
+                    self.get_check_xml (block)
                 elif context.at_top_context ('trigger-definitions'):
-                    # TODO - xml files
-                    #trigger_id = self.get_xml_value ('trgr:trigger-id', block.text)
-                    #database = block.text[0]
-                    #path = f'{context.find_property("out-dir")}/Trigger/{database}/Trigger-{trigger_id}.xml'
-                    #range = [1, len(block.text)-1]
-                    #block.files.append ([path, range])
-                    pass
+                    self.get_check_xml (block)
+                elif context.at_top_context ('cpf-pipelines'):
+                    self.get_check_xml (block)
+                #elif context.at_top_context ('flexrep-domains'):
+                else:
+                    block.context.set_property ('unhandled', 'true')
             block_number = block_number + 1
         
     def get_check_xml (self, block):
@@ -517,7 +513,7 @@ class DumpBlocks:
         for line in lines:
             #print (f'block l{block.start_line}, line {line_number}')
             # sometimes first line is not part of the file
-            if context.get_top_context() in ['xml-schemas'] and line_number == 0:
+            if context.get_top_context() in ['xml-schemas','sql-schemas','trigger-definitions','forest-status','cpf-domains','cpf-pipelines'] and line_number == 0:
                 line_number += 1
                 continue
             m = re.match(r'\s*<(/?)([^>\s]+)', line)
@@ -535,6 +531,37 @@ class DumpBlocks:
                         filename = element_name
                         if context.at_top_context ('xml-schemas'):
                             path = f'{context.find_property("out-dir")}/Schemas/{context.get_property("database")}/Schema-{file_number}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('trigger-definitions'):
+                            trigger_id = self.get_xml_value ('trgr:trigger-id', block.text[start_line:end_line])
+                            path = f'{context.find_property("out-dir")}/Triggers/{context.get_property("database")}/Trigger-{trigger_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('sql-schemas'):
+                            schema_id = self.get_xml_value ('view:schema-id', block.text)
+                            path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/Schema-{schema_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('sql-views'):
+                            view_id = self.get_xml_value ('view:view-id', block.text)
+                            path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/View-{view_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('cpf-pipelines'):
+                            id = self.get_xml_value ('p:pipeline-id', block.text)
+                            path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/Pipeline-{id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('cpf-domains'):
+                            if element_name == 'dom:domain':
+                                domain_id = self.get_xml_value ('dom:domain-id', block.text[start_line : end_line])
+                                path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Domain-{domain_id}.xml'
+                            elif element_name == 'dom:configuration':
+                                configuration_id = self.get_xml_value ('dom:config-id', block.text[start_line : end_line])
+                                path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Configuration-{configuration_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('forest-status'):
+                            hostname = block.context.find_property("hostname")
+                            group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
+                            #path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
+                            filename = element_name.title()
+                            path = f'{context.find_property("out-dir")}/{group}/{hostname}/{block.context.find_property("forest-name")}/{filename}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         current_element = '---';
                         start_line = -1
