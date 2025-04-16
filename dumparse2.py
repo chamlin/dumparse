@@ -187,19 +187,19 @@ class DumpBlocks:
         return match
 
     subsection_titles = {
-        'Host Status': True,
-        'App Server Status': True,
-        'Database Topology': True,
-        'Forest Status': True,
-        'Trigger Definitions': True,
-        'CPF Domains': True,
-        'CPF Pipelines': True,
-        'FlexRep Domains': True,
-        'SQL Schemas': True,
-        'SQL Views': True,
-        'XML Schemas': True,
-        'Configuration': True,
-        'Log Files': True,
+        'Host Status': 'host-status',
+        'App Server Status': 'app-servers',
+        'Database Topology': 'database-topology',
+        'Forest Status': 'forest-status',
+        'Trigger Definitions': 'trigger-definitions',
+        'CPF Domains': 'cpf-domains',
+        'CPF Pipelines': 'cpf-pipelines',
+        'FlexRep Domains': 'flexrep domains',
+        'SQL Schemas': 'sql schemas',
+        'SQL Views': 'sql views',
+        'XML Schemas': 'xml schemas',
+        'Configuration': 'configuration',
+        'Log Files': 'log-files',
     }
 
     # copies context over and sets the subtype property
@@ -355,7 +355,7 @@ class DumpBlocks:
                 last_context = block.context
             elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Log Files':
                 block.context.pop_context()
-                block.context.push_context('logs', {})
+                block.context.push_context('log-files', {})
                 # mark heading and skip it
                 self.set_next_block_subtype (block_number)
                 block_number += 1
@@ -389,7 +389,7 @@ class DumpBlocks:
                 block.context.pop_property ('validation-results')
                 last_context = block.context
             # set up a log file
-            elif self.at_start_of_sequence (['subsep', 'text'], block_number) and block.context.at_top_context ('logs') and self.block(block_number + 1).first_line().endswith('.txt'):
+            elif self.at_start_of_sequence (['subsep', 'text'], block_number) and block.context.at_top_context ('log-files') and self.block(block_number + 1).first_line().endswith('.txt'):
                 block.context.set_property ('filename', self.block (block_number + 1).first_line())
                 self.set_next_block_subtype (block_number, 'filename')
                 block_number += 1
@@ -401,7 +401,7 @@ class DumpBlocks:
                     or block.context.at_top_context ('host-status')
                     or block.context.at_top_context ('data-directory')
                     or (block.context.at_top_context ('configuration') and not block.first_line().startswith ('Configuration file'))
-                    or (block.context.at_top_context ('logs') and block.context.has_property ('filename'))
+                    or (block.context.at_top_context ('log-files') and block.context.has_property ('filename'))
                    ):
                     block.context.set_property ('subtype', 'file')
                 # these extra db name from file text first line and remove that line
@@ -465,7 +465,7 @@ class DumpBlocks:
                 elif context.at_top_context ('configuration'):
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Configuration/{context.get_property("filename")}'
                     block.files.append ([path, [0, len(block.text) - 1]])
-                elif context.at_top_context ('logs'):
+                elif context.at_top_context ('log-files'):
                     filename = re.sub (r'.*/', '', context.get_property ('filename'))
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Logs/{filename}'
                     block.files.append ([path, [0, len(block.text) - 1]])
