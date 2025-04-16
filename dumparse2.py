@@ -458,34 +458,29 @@ class DumpBlocks:
             if block.type == 'text' and context.get_property ('subtype') == 'file':
                 if context.at_top_context ('app-servers'):
                     path = f'{context.find_property("out-dir")}/{context.get_property("group")}/{context.get_property("host")}/App-Servers/{context.get_property("appserver")}-Status.xml'
-                    block.files.append ([path, [1, len(block.text)-1]])
+                    block.files.append ([path, [1, len(block.text)]])
                 elif context.at_top_context ('dump-info'):
                     path = f'{context.find_property("out-dir")}/Support-Request.txt'
-                    block.files.append ([path, [1, len(block.text)-1]])
+                    block.files.append ([path, [1, len(block.text)]])
                 elif context.at_top_context ('database-topology'):
                     path = f'{context.find_property("out-dir")}/Database-Topology.txt'
-                    block.files.append ([path, [0, len(block.text)-1]])
+                    block.files.append ([path, [0, len(block.text)]])
                     if saw_database_topology == False:
-                        block.context.set_property ('first-file', True)
                         saw_database_topology = True
+                    else: 
+                        block.context.set_property ('write-mode', 'append')
                 elif context.at_top_context ('configuration'):
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Configuration/{context.get_property("filename")}'
-                    block.files.append ([path, [0, len(block.text)-1]])
+                    block.files.append ([path, [0, len(block.text)]])
                 elif context.at_top_context ('logs'):
                     filename = re.sub (r'.*/', '', context.get_property ('filename'))
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Logs/{filename}'
-                    block.files.append ([path, [0, len(block.text)-1]])
+                    block.files.append ([path, [0, len(block.text)]])
                 elif context.at_top_context ('host-status'):
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Host-Status.xml'
-                    block.files.append ([path, [0, len(block.text)-1]])
+                    block.files.append ([path, [0, len(block.text)]])
                 elif context.at_top_context ('forest-status'):
                     self.get_check_xml (block)
-
-                    #forest_name = block.text[0]
-                    #hostname = block.context.find_property('hostname')
-                    #group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
-                    #path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
-                    #block.files.append ([path, [1, len(block.text)-1]])
                 elif context.at_top_context ('cpf-domains'):
                     self.get_check_xml (block)
                 elif context.at_top_context ('xml-schemas'):
@@ -523,7 +518,7 @@ class DumpBlocks:
                 if end_slash:
                     # end element
                     if current_element == element_name:
-                        end_line = line_number
+                        end_line = line_number + 1
                         # nice, matched up
                         #print ('< obai ' + element_name)
                         #trigger_id = self.get_xml_value ('trgr:trigger-id', block.text)
@@ -577,6 +572,24 @@ class DumpBlocks:
 
             line_number += 1
 
+
+    def write_files (self):
+        for block in self.blocks:
+            for file in block.files:
+                path, limits = file
+
+                m = re.match(r'^(.*)/(.*)', path)
+                dirs, filename = m.group(1), m.group(2)
+                #print (f'write {filename} to {dirs} from {repr(limits[0])}')
+
+                os.makedirs (dirs, 0o777, True)
+                write_mode = 'a' if block.context.get_property ('write-mode') == 'append' else 'w' 
+                with open(path, write_mode) as f:
+                    for line in block.text[limits[0]:limits[1]]:
+                        f.write (line + '\n')
+
+
+
 blocks = DumpBlocks()
 line_number = 0
 
@@ -611,6 +624,7 @@ with open(args.dumpfile, encoding='utf-8') as dumpfile:
 
 blocks.context_run_through()
 blocks.ready_files()
+blocks.write_files()
 
 if args.debug:  blocks.dump()
 
