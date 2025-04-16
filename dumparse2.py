@@ -477,8 +477,7 @@ class DumpBlocks:
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Logs/{filename}'
                     block.files.append ([path, [0, len(block.text)]])
                 elif context.at_top_context ('host-status'):
-                    path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Host-Status.xml'
-                    block.files.append ([path, [0, len(block.text)]])
+                    self.get_check_xml (block)
                 elif context.at_top_context ('forest-status'):
                     self.get_check_xml (block)
                 elif context.at_top_context ('cpf-domains'):
@@ -541,7 +540,7 @@ class DumpBlocks:
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('cpf-pipelines'):
                             id = self.get_xml_value ('p:pipeline-id', block.text)
-                            path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/Pipeline-{id}.xml'
+                            path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Pipeline-{id}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('cpf-domains'):
                             if element_name == 'dom:domain':
@@ -556,7 +555,13 @@ class DumpBlocks:
                             group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
                             #path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
                             filename = element_name.title()
-                            path = f'{context.find_property("out-dir")}/{group}/{hostname}/{block.context.find_property("forest-name")}/{filename}.xml'
+                            path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{block.context.find_property("forest-name")}/{filename}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('host-status'):
+                            hostname = block.context.find_property("host")
+                            group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
+                            filename = element_name.title()
+                            path = f'{context.find_property("out-dir")}/{group}/{hostname}/{filename}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         current_element = '---';
                         start_line = -1
