@@ -186,13 +186,6 @@ class DumpBlocks:
                     break
         return match
 
-    # absorb text from next block then remove it
-    def absorb_following_block (self, block_number):
-        self.blocks[block_number].text.extend (self.blocks[block_number+1].text)
-        self.blocks[block_number+1 : block_number+2] = []
-        
-
-
     subsection_titles = {
         'Host Status': True,
         'App Server Status': True,
@@ -458,24 +451,24 @@ class DumpBlocks:
             if block.type == 'text' and context.get_property ('subtype') == 'file':
                 if context.at_top_context ('app-servers'):
                     path = f'{context.find_property("out-dir")}/{context.get_property("group")}/{context.get_property("host")}/App-Servers/{context.get_property("appserver")}-Status.xml'
-                    block.files.append ([path, [1, len(block.text)]])
+                    block.files.append ([path, [1, len(block.text) - 1]])
                 elif context.at_top_context ('dump-info'):
                     path = f'{context.find_property("out-dir")}/Support-Request.txt'
-                    block.files.append ([path, [1, len(block.text)]])
+                    block.files.append ([path, [1, len(block.text) - 1]])
                 elif context.at_top_context ('database-topology'):
                     path = f'{context.find_property("out-dir")}/Database-Topology.txt'
-                    block.files.append ([path, [0, len(block.text)]])
+                    block.files.append ([path, [0, len(block.text) - 1]])
                     if saw_database_topology == False:
                         saw_database_topology = True
                     else: 
                         block.context.set_property ('write-mode', 'append')
                 elif context.at_top_context ('configuration'):
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Configuration/{context.get_property("filename")}'
-                    block.files.append ([path, [0, len(block.text)]])
+                    block.files.append ([path, [0, len(block.text) - 1]])
                 elif context.at_top_context ('logs'):
                     filename = re.sub (r'.*/', '', context.get_property ('filename'))
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Logs/{filename}'
-                    block.files.append ([path, [0, len(block.text)]])
+                    block.files.append ([path, [0, len(block.text) - 1]])
                 elif context.at_top_context ('host-status'):
                     self.get_check_xml (block)
                 elif context.at_top_context ('forest-status'):
@@ -517,7 +510,7 @@ class DumpBlocks:
                 if end_slash:
                     # end element
                     if current_element == element_name:
-                        end_line = line_number + 1
+                        end_line = line_number
                         # nice, matched up
                         #print ('< obai ' + element_name)
                         #trigger_id = self.get_xml_value ('trgr:trigger-id', block.text)
@@ -585,12 +578,11 @@ class DumpBlocks:
 
                 m = re.match(r'^(.*)/(.*)', path)
                 dirs, filename = m.group(1), m.group(2)
-                #print (f'write {filename} to {dirs} from {repr(limits[0])}')
 
                 os.makedirs (dirs, 0o777, True)
                 write_mode = 'a' if block.context.get_property ('write-mode') == 'append' else 'w' 
                 with open(path, write_mode) as f:
-                    for line in block.text[limits[0]:limits[1]]:
+                    for line in block.text[limits[0]:limits[1] + 1]:
                         f.write (line + '\n')
 
 
