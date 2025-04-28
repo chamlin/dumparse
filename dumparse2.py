@@ -454,7 +454,7 @@ class DumpBlocks:
                     block.files.append ([path, [1, len(block.text) - 1]])
                 elif context.at_top_context ('dump-info'):
                     path = f'{context.find_property("out-dir")}/Support-Request.txt'
-                    block.files.append ([path, [1, len(block.text) - 1]])
+                    block.files.append ([path, [0, len(block.text) - 1]])
                 elif context.at_top_context ('database-topology'):
                     block.context.set_property ('header', '===================================')
                     path = f'{context.find_property("out-dir")}/Database-Topology.txt'
