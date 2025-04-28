@@ -456,6 +456,7 @@ class DumpBlocks:
                     path = f'{context.find_property("out-dir")}/Support-Request.txt'
                     block.files.append ([path, [1, len(block.text) - 1]])
                 elif context.at_top_context ('database-topology'):
+                    block.context.set_property ('header', '===================================')
                     path = f'{context.find_property("out-dir")}/Database-Topology.txt'
                     block.files.append ([path, [0, len(block.text) - 1]])
                     if saw_database_topology == False:
@@ -582,6 +583,8 @@ class DumpBlocks:
                 os.makedirs (dirs, 0o777, True)
                 write_mode = 'a' if block.context.get_property ('write-mode') == 'append' else 'w' 
                 with open(path, write_mode) as f:
+                    if block.context.get_property ('header'):
+                        f.write (block.context.get_property ('header') + '\n')
                     for line in block.text[limits[0]:limits[1] + 1]:
                         f.write (line + '\n')
 
