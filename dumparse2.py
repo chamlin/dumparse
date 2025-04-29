@@ -503,7 +503,7 @@ class DumpBlocks:
         for line in lines:
             #print (f'block l{block.start_line}, line {line_number}')
             # sometimes first line is not part of the file
-            if context.get_top_context() in ['xml-schemas','sql-schemas','trigger-definitions','forest-status','cpf-domains','cpf-pipelines'] and line_number == 0:
+            if context.get_top_context() in ['xml-schemas','sql-schemas','trigger-definitions','forest-status','cpf-domains','cpf-pipelines','flexrep-domains'] and line_number == 0:
                 line_number += 1
                 continue
             m = re.match(r'\s*<(/?)([^>\s]+)', line)
