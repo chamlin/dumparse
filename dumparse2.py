@@ -566,11 +566,14 @@ class DumpBlocks:
                         start_line = -1
                         file_number += 1
                 else:
-                    # start element
+                    # start element but gotta handle also singletons
                     if current_element == '---':
-                        #print ('> ohai ' + element_name)
-                        start_line = line_number
-                        current_element = element_name
+                        if re.fullmatch (r'<[^<]+/>\s*', line):
+                            print (f'EH? Singleton?: {line}', file=sys.stderr)
+                        else:
+                            # start a new one
+                            start_line = line_number
+                            current_element = element_name
             elif start_line == -1:
                 print ('ERROR: unowned line at about line ', block.start_line + line_number)
 
