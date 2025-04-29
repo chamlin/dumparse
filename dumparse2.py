@@ -521,27 +521,27 @@ class DumpBlocks:
                             path = f'{context.find_property("out-dir")}/Schemas/{context.get_property("database")}/Schema-{file_number}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('trigger-definitions'):
-                            trigger_id = self.get_xml_value ('trgr:trigger-id', block.text[start_line:end_line])
+                            trigger_id = self.get_xml_value ('trgr:trigger-id', block.text[start_line:end_line+1])
                             path = f'{context.find_property("out-dir")}/Triggers/{context.get_property("database")}/Trigger-{trigger_id}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('sql-schemas'):
-                            schema_id = self.get_xml_value ('view:schema-id', block.text)
+                            schema_id = self.get_xml_value ('view:schema-id', block.text[start_line:end_line+1])
                             path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/Schema-{schema_id}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('sql-views'):
-                            view_id = self.get_xml_value ('view:view-id', block.text)
+                            view_id = self.get_xml_value ('view:view-id', block.text[start_line:end_line+1])
                             path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/View-{view_id}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('cpf-pipelines'):
-                            id = self.get_xml_value ('p:pipeline-id', block.text)
+                            id = self.get_xml_value ('p:pipeline-id', block.text[start_line:end_line+1])
                             path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Pipeline-{id}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('cpf-domains'):
                             if element_name == 'dom:domain':
-                                domain_id = self.get_xml_value ('dom:domain-id', block.text[start_line : end_line])
+                                domain_id = self.get_xml_value ('dom:domain-id', block.text[start_line:end_line+1])
                                 path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Domain-{domain_id}.xml'
                             elif element_name == 'dom:configuration':
-                                configuration_id = self.get_xml_value ('dom:config-id', block.text[start_line : end_line])
+                                configuration_id = self.get_xml_value ('dom:config-id', block.text[start_line:end_line+1])
                                 path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Configuration-{configuration_id}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('forest-status'):
