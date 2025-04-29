@@ -486,9 +486,11 @@ class DumpBlocks:
                     self.get_check_xml (block)
                 elif context.at_top_context ('cpf-pipelines'):
                     self.get_check_xml (block)
-                #elif context.at_top_context ('flexrep-domains'):
+                elif context.at_top_context ('flexrep-domains'):
+                    self.get_check_xml (block)
                 else:
                     block.context.set_property ('unhandled', 'true')
+                    print (f'ERROR:  unhandled text starting at line {block.start_line}', file=sys.stderr)
             block_number = block_number + 1
         
     def get_check_xml (self, block):
@@ -519,6 +521,9 @@ class DumpBlocks:
                         filename = element_name
                         if context.at_top_context ('xml-schemas'):
                             path = f'{context.find_property("out-dir")}/Schemas/{context.get_property("database")}/Schema-{file_number}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('flexrep-domains'):
+                            path = f'{context.find_property("out-dir")}/Flexrep/{context.get_property("database")}/Domain-{file_number}.xml'
                             block.files.append ([path, [start_line, end_line]])
                         elif context.at_top_context ('trigger-definitions'):
                             trigger_id = self.get_xml_value ('trgr:trigger-id', block.text[start_line:end_line+1])
