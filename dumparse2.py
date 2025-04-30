@@ -569,7 +569,7 @@ class DumpBlocks:
                     # start element but gotta handle also singletons
                     if current_element == '---':
                         if re.fullmatch (r'<[^<]+/>\s*', line):
-                            print (f'EH? Singleton?: {line}', file=sys.stderr)
+                            print (f'WARNING? Singleton?: {line}', file=sys.stderr)
                         else:
                             # start a new one
                             start_line = line_number
