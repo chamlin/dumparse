@@ -1,26 +1,100 @@
 #!/usr/bin/python3
-#!/opt/anaconda3/bin/python
 
 import re
 import os
+import sys
 import string
 import argparse
+import copy
 
+class DumpContext:
+    def __init__(self, init_context=None):
+        if init_context is None:
+                self.path = []
+                self.properties = []
+        else:
+                self.path = copy.deepcopy (init_context.path)
+                self.properties = copy.deepcopy (init_context.properties)
+
+    @staticmethod
+    def copy_context (c):
+        return copy.deepcopy (c)
+
+    def find_property (self, key):
+        retval = None
+        for i in range (len (self.properties) - 1, -1, -1):
+            if key in self.properties[i]:
+                retval = self.properties[i][key]
+                break
+        return retval
+
+    def get_property (self, key):
+        if self.has_property (key):
+            return self.properties[-1][key]
+        else:
+            return None
+
+    def set_property (self, key, value):
+        self.properties[-1][key] = value
+
+    def pop_property (self, key):
+        self.properties[-1].pop(key, None)
+
+    def copy_self (self):
+        return copy.deepcopy (self)
+
+    def push_context (self, path, properties):
+        self.path.append (path)
+        self.properties.append (properties)
+
+    def pop_context (self):
+        self.path.pop ()
+        self.properties.pop ()
+
+    def top_properties (self):
+        return self.properties[-1]
+
+    def context_string (self):
+        return repr (list (zip (self.path, self.properties)))
+        #return f'{tuple (zip (self.path, self.properties))}'[0:256]
+
+    def get_top_context (self):
+        return self.path[-1]
+
+    def at_top_context (self, path):
+        return path == self.path[-1]
+
+    # checks only top
+    def has_property (self, key):
+        return key in self.properties[-1]
+
+    def check_top_context (self, path):
+        if (path != self.path[-1]):
+            print (f'ERROR:  checking path {path} vs {self.path[-1]}, found mismatch.', file=sys.stderr)
+        
 
 
 class DumpBlock:
-    def __init__(self, type='text', name=''):
+    def __init__(self, type='text', name='', init_context=None):
         # all start out this way
         self.type = type
-        self.files = {}
-        self.subtype = ''
-        self.properties = {}
-        self.context = {}
+        self.files = []
         self.text = []
         self.start_line = 0
+        self.flags = ''
+        if init_context is None:
+                self.context = DumpContext()
+        else:
+                self.context = DumpContext.copy_context (init_context)
+       
+    def at_top_context (self, path):
+        return self.context.at_top_context (path) 
 
     def add_line (self, line):
         self.text.append (line)
+
+    def add_flag (self, flag):
+        self.flags = flag
 
     def first_line (self):
         line = ''
@@ -33,16 +107,11 @@ class DumpBlock:
 
     def dump(self, position=0, level=0):
         print ()
-        print ('vvvvvvvvvvvv ', position, '; start line ', self.start_line, '; ', end = '')
-        print ('types: ' + self.type + '/' + self.subtype + ', properties: ', end = '')
-        print (self.properties, ', context: ', self.context)
+        print (f'>>>> {self.flags} {position}; type {self.type}; l{self.start_line}; context: ', self.context.context_string())
+        if len(self.files) > 0:
+                print ('>>>> ', repr (self.files))
         for line in self.text:
             print (line)
-        print ('-- files')
-        for file in self.files.keys():
-            #print (self.files[file])
-            print ('    ', file, ' (', len(self.files[file]), ')')
-        print ('^^^^^^^^^^^^ ', position)
 
 class DumpFile:
 
@@ -50,22 +119,23 @@ class DumpFile:
         self.text = []
         self.type = ''
 
+        
 class DumpBlocks:
 
     def __init__(self):
         self.blocks = []
+        self.hostname_group_mapping = {}
+        self.host_id_hostname_mapping = {}
+
     
     def add_line (self, line, line_number):
         if line == '===========================================================================' or line == ' =================================================================':
-            #print ('bingo (', line, ')!\n')
             self.blocks.append (DumpBlock('subsep'))
             self.blocks[-1].start_line = line_number
         elif line == '###########################################################################' or line == ' ###########################################################################':
-            #print ('bango (', line, ')!\n')
             self.blocks.append (DumpBlock('sep'))
             self.blocks[-1].start_line = line_number
         elif line == '%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%' or line == ' %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%':
-            #print ('bongo (', line, ')!\n')
             self.blocks.append (DumpBlock('bigsep'))
             self.blocks[-1].start_line = line_number
         else:
@@ -76,7 +146,10 @@ class DumpBlocks:
             
         self.blocks[-1].add_line (line)
 
-    def len(self):
+    def block (self, block_number):
+        return self.blocks[block_number]
+
+    def len (self):
         return len (self.blocks) #self.blocks.size()
 
     def dump(self):
@@ -85,422 +158,442 @@ class DumpBlocks:
             block.dump(i)
             i += 1
 
-    # match the type_sequence, starting at block start_at, up to end_at, return first block number of first match, or -1 on no match
-    def find_type_sequence (self, type_sequence=[], start_at=0, end_at=9999999):
-        type_count = len (type_sequence)
-        if type_count < 1:
-            return -1
-        # this is the absolute max
-        last_start = len (self.blocks) - type_count
-        if start_at > last_start:
-            return -1
-        if (end_at < last_start): 
-            last_start = end_at
-        for i in range (start_at, last_start+1):
-            match = 1
-            for j in range (0, type_count):
-                if type_sequence[j] != self.blocks[i+j].type:
-                    match = 0
-                    break
-            if (match):
-                return (i)
-        return -1
-
-    # parse out properties from main section text
-    def set_section_properties (self, section):
-        for line in section.text:
-            key_val = re.split (r':\s+', line)
-            if (len (key_val) != 2):
-                continue
-            key = self.safer_name (key_val[0])
-            value = key_val[1]
-            section.properties[key] = value
-
     def get_line_key_values (self, line, properties):
         pairs = line.split (', ')
         for pair in pairs:
             key, value = pair.split (': ')
             properties[key.lower()] = value
-            
-
-    # absorb text from next block then remove it
-    def absorb_following_block (self, block_number):
-        self.blocks[block_number].text.extend (self.blocks[block_number+1].text)
-        self.blocks[block_number+1 : block_number+2] = []
-        
-
-    # find the main sections
-    def create_sections (self):
-        #while ((section_start := self.find_type_sequence (['bigsep', 'text', 'bigsep'])) >= 0):
-        section_start = self.find_type_sequence (['bigsep', 'text', 'bigsep'])
-        while section_start >= 0:
-            section = self.blocks[section_start+1]
-            section.type = 'section'
-            if (section.text[0].startswith ('Report Time')):
-                section.type = 'dump'
-            elif (section.text[0].startswith ('Hostname:')):
-                section.type = 'host'
-            self.set_section_properties (section)
-            self.blocks[section_start:section_start+3] = [section]
-            section_start = self.find_type_sequence (['bigsep', 'text', 'bigsep'])
 
     def config_file_subsection (self, line):
         return re.fullmatch (r'(server|groups|databases|assignments|hosts|clusters|keystore|kms|tokenizer|mimetypes)(_[0-9])?\.xml', line)
 
-    def log_file_subsection (self, line):
-        return re.fullmatch (r'.*ErrorLog\.txt', line)
+    # match the type_sequence, starting at the given block number
+    def at_start_of_sequence (self, type_sequence, start_at):
+        type_count = len (type_sequence)
+        if type_count < 1: return False
+        end_at = start_at + type_count - 1
+        if end_at > len (self.blocks) - 1:  return False
+        match = True
+        for i in range (0, type_count - 1):
+            if type_sequence[i] != self.blocks[start_at + i].type:
+                    match = False
+                    break
+        return match
 
-    # find the secondary sections
-    def create_subsections (self):
-        subsection_titles = {
-            'Host Status': True,
-            'App Server Status': True,
-            'Database Topology': True,
-            'Forest Status': True,
-            'Trigger Definitions': True,
-            'CPF Domains': True,
-            'CPF Pipelines': True,
-            'FlexRep Domains': True,
-            'SQL Schemas': True,
-            'SQL Views': True,
-            'XML Schemas': True,
-            'Configuration': True,
-            'Log Files': True,
-        }
+    subsection_titles = {
+        'Host Status': 'host-status',
+        'App Server Status': 'app-servers',
+        'Database Topology': 'database-topology',
+        'Forest Status': 'forest-status',
+        'Trigger Definitions': 'trigger-definitions',
+        'CPF Domains': 'cpf-domains',
+        'CPF Pipelines': 'cpf-pipelines',
+        'FlexRep Domains': 'flexrep domains',
+        'SQL Schemas': 'sql schemas',
+        'SQL Views': 'sql views',
+        'XML Schemas': 'xml schemas',
+        'Configuration': 'configuration',
+        'Log Files': 'log-files',
+    }
 
-        start_at = 0
-        
-        # while ((subsection_start := self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)) >= 0):
-        subsection_start = self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)
-        while subsection_start >= 0:
-            text_block = self.blocks[subsection_start+1]
-            #print ('check: ', text_block.text[0], '->', subsection_titles.get (text_block.text[0], 'nil'))
-            if self.config_file_subsection (text_block.first_line()):
-                subsection = self.blocks[subsection_start+1]
-                subsection.type = 'config_file'
-                subsection.properties['filename'] = subsection.text[0]
-                self.blocks[subsection_start:subsection_start+3] = [subsection]
-            elif self.log_file_subsection (text_block.first_line()):
-                subsection = self.blocks[subsection_start+1]
-                subsection.type = 'log_file'
-                subsection.properties['filename'] = subsection.text[0]
-                self.blocks[subsection_start:subsection_start+3] = [subsection]
-            elif subsection_titles.get (text_block.first_line(), False):
-                subsection = self.blocks[subsection_start+1]
-                subsection.type = 'subsection'
-                self.blocks[subsection_start:subsection_start+3] = [subsection]
-            start_at = subsection_start+1
-            subsection_start = self.find_type_sequence (['subsep', 'text', 'subsep'], start_at)
+    # copies context over and sets the subtype property
+    def set_next_block_subtype (self, block_number, label='heading'):
+        self.block(block_number + 1).context = DumpContext.copy_context (self.block (block_number).context)
+        self.block(block_number + 1).context.set_property ('subtype', label)
 
-
-
-    # put this together from its bits
-    def reconstitute_database_topology (self):
-        found = 0
-        block_number = 0
-        while block_number < len (self.blocks):
-            block = self.blocks[block_number]
-            if block.type == 'subsection' and block.text[0] == 'Database Topology':
-                block.subtype = 'database_topology'
-                block.text = []
-                found = 1
-                break
-            block_number += 1
-        if found:
-            while block_number < len (self.blocks) and self.blocks[block_number+1].type != 'subsection':
-                blocks.absorb_following_block (block_number)
-
-    
-    # remove notices that a file isn't there (dump checks for all older versions)
-    def remove_missing_configurations (self):
-        block_number = 0
-        while block_number < len (self.blocks):
-            if self.find_type_sequence (['subsep', 'text', 'subsep'], block_number, block_number) >= 0\
-                and re.fullmatch ('Configuration file .* does not exist.', self.blocks[block_number+1].text[0]):
-                    self.blocks[block_number : block_number+3] = []
-            else:
-                block_number += 1
-
-    def safer_name (self, string=''):
-        return string.lower().translate (str.maketrans (' ', '_'))
-
-    def remove_block_number (self, block_number):
-        if len(self.blocks) > block_number+1:  self.blocks[block_number:block_number+1] = []
+    def get_hostname_from_host_info (self, block):
+        for line in block.text:
+            if line.startswith ('Report Host:'):
+                return re.sub (r'Report Host:\s+', '', line)
+        return 'unknown-hostname-from-host-info'
 
     # remove notices that a file isn't there (checks for all older versions)
     def context_run_through (self):
-        block_number = 1
-        context = {}
-        while block_number < len (self.blocks):
-            block = self.blocks[block_number]
-            last_block = self.blocks[block_number-1]
-
-            # get rid of leading blank lines in text blocks
-            if block.type == 'text':
-                while block.has_lines() and re.fullmatch (r'\s*', block.text[0]):
-                    block.text[0:1] = []
-
-            # update from preceding block
-            if last_block.type == 'dump':
-                context['type'] = last_block.type
-                context['host'] = last_block.properties['report_host']
-            elif last_block.type == 'host':
-                context['type'] = last_block.type
-                context['host'] = last_block.properties['hostname']
-            elif last_block.type == 'subsection':
-                # database_topology already set
-                if not last_block.subtype:
-                    last_block.subtype = self.safer_name (last_block.text[0])
-                context['type'] = last_block.type
-                context['subtype'] = last_block.subtype
-            #elif block.type == 'text':
-
-            # update from this block
-            # 
-            #  appserver status
-            if  context['type'] == 'subsection' and context['subtype'] == 'app_server_status' and block.text[0].startswith ('Group: '):
-                block.type = 'appserver'
-                self.get_line_key_values (block.text[0], block.properties)
-                context['group'] = block.properties['group']
-                block.text[0 : 1] = []
-            #  triggers, first line is db
-            elif context['type'] == 'subsection' and context['subtype'] == 'host_status' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'host_status'
-            elif context['type'] == 'subsection' and context['subtype'] == 'trigger_definitions' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'triggers'
-                    block.properties['database'] = block.text[0]
-                    block.text[0 : 1] = []
-            elif context['type'] == 'subsection' and context['subtype'] == 'cpf_domains' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'cpf_domain'
-                    block.properties['database'] = block.text[0]
-                    block.text[0 : 1] = []
-            elif context['type'] == 'subsection' and context['subtype'] == 'cpf_pipelines' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'cpf_pipelines'
-                    block.properties['database'] = block.text[0]
-                    block.text[0 : 1] = []
-            elif context['type'] == 'subsection' and context['subtype'] == 'flexrep_domains' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'flexrep_domains'
-                    block.properties['database'] = block.text[0]
-                    block.text[0 : 1] = []
-            elif context['type'] == 'subsection' and context['subtype'] == 'sql_schemas' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'sql_schemas'
-                    block.properties['database'] = block.text[0]
-                    block.text[0 : 1] = []
-            elif context['type'] == 'subsection' and context['subtype'] == 'sql_views' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'sql_views'
-                    block.properties['database'] = block.text[0]
-                    block.text[0 : 1] = []
-            elif context['type'] == 'subsection' and context['subtype'] == 'xml_schemas' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'xml_schemas'
-                    block.properties['database'] = block.text[0]
-                    block.text[0 : 1] = []
-            elif context['type'] == 'subsection' and context['subtype'] == 'forest_status' and block.type == 'text':
-                if block.has_lines():
-                    block.type = 'forest_status'
-                    block.properties['database'] = block.first_line()
-                    block.text[0 : 1] = []
-                
-            block.context = context.copy()
-            block_number += 1
-
-    def has_block_number (self, block_number=-1):
-        if block_number >= 0 and block_number < len(self.blocks):
-            return True
-        return False
-
-    # remove notices that a file isn't there (checks for all older versions)
-    def setup_config_files (self):
-        # while (block_number := block_number + 1) < len (self.blocks):
         block_number = 0
+        #context = [{'path': ['dump'], 'properties': []}]
+        last_context = DumpContext ()
+        last_context.push_context ('dump', {'out-dir': './Support-Dump'})
         while block_number < len (self.blocks):
             block = self.blocks[block_number]
-            if block.type == 'config_file' and self.has_block_number (block_number):
-                next_block = self.blocks[block_number+1]
-                if next_block.type == 'subsep':
-                    self.remove_block_number(block_number+1)
-                next_block = self.blocks[block_number+1]
-                if next_block.type == 'text' and next_block.first_line().startswith ('Validation results: '):
-                    block.properties['validation_results'] = next_block.first_line()[len ('Validation results: '):]
-                    self.remove_block_number(block_number+1)
-                next_block = self.blocks[block_number+1]
-                if next_block.type == 'subsep':
-                    self.remove_block_number(block_number+1)
-                next_block = self.blocks[block_number+1]
-                if next_block.type == 'text':
-                    block.text = next_block.text
-                    self.remove_block_number(block_number+1)
-            block_number = block_number + 1
+            # carry forward the last context to start
+            block.context = DumpContext.copy_context (last_context)
 
-    # sets up log files
-    def setup_log_files (self):
-        # while (block_number := block_number + 1) < len (self.blocks):
-        block_number = 0
-        while block_number < len (self.blocks):
-            block = self.blocks[block_number]
-            if block.type == 'log_file' and self.has_block_number (block_number):
-                next_block = self.blocks[block_number+1]
-                if next_block.type == 'text':
-                    block.text = next_block.text
-                    self.remove_block_number(block_number+1)
-                    block.properties['filename'] = 'ErrorLog.txt'
-            block_number = block_number + 1
+            # means it was considered directly in the context run through
+            block.add_flag ('*')
 
-    def get_check_xml (self, block):
-        # print ('checking block type: ' + block.type)
-        lines = block.text
-        current_element = '---';
-        current_file = [];
-        line_count = 0
-        file_number = 1
-        for line in lines:
-            line_count += 1
-            m = re.match(r'\s*<(/?)([^>\s]+)', line)
-            if m:
-                end_slash, element_name = m.group(1), m.group(2)
-                #print ('   match ' + end_slash + element_name)
-                if end_slash:
-                    # end element
-                    if current_element == element_name:
-                        # nice, matched up
-                        #print ('< obai ' + element_name)
-                        filename = element_name
-                        if block.type == 'config_file':  filename = block.properties['filename']
-                        elif block.type == 'xml_schemas':  filename = f'Schema-{file_number}'
-                        elif block.type == 'host_status':  filename = element_name.title() + '.xml'
-                        current_file.append (line)
-                        if not element_name in block.files:
-                            block.files[filename] = []
-                        block.files[filename].append (current_file)
-                        current_element = '---';
-                        current_file = [];
-                        file_number += 1
-                    else:
-                        current_file.append (line)
+            # dump info at start of dump
+            if self.at_start_of_sequence (['bigsep', 'text', 'bigsep'], block_number) and block.context.at_top_context ('dump'):
+                block.context.set_property ('host', self.get_hostname_from_host_info (self.blocks[block_number+1]))
+                block.context.push_context ('dump-info', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number, 'file')
+                block_number += 1
+                last_context = block.context
+            # dump dump-info -> dump - cluster - app-servers
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and block.context.at_top_context ('dump-info') and self.block(block_number + 1).first_line() == 'App Server Status':
+                block.context.pop_context()
+                # any way to get group name?  set this from the app-server level too?
+                block.context.push_context('cluster', {})
+                block.context.push_context('app-servers', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            # app server server-status file
+            elif self.at_start_of_sequence (['subsep', 'text'], block_number) and block.context.at_top_context ('app-servers') and self.block(block_number + 1).first_line().startswith ('Group:'):
+                next_block = self.block(block_number + 1)
+                self.get_line_key_values (next_block.first_line(), block.context.top_properties())
+                hostname = block.context.get_property('host')
+                host_id = self.get_xml_value ('host-id', next_block.text)
+                self.host_id_hostname_mapping[host_id] = hostname
+                block.context.set_property ('host-id', host_id)
+                # save mappings for the later host sections
+                self.hostname_group_mapping[hostname] = block.context.get_property('group')
+                self.set_next_block_subtype (block_number, 'file')
+                # remove line to leave just xml
+                # self.block(block_number + 1).text[0 : 1] = []
+                block_number += 1
+                last_context = block.context
+            # Database Topology - database-dump()
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and block.context.at_top_context ('app-servers') and self.block(block_number + 1).first_line() == 'Database Topology':
+                block.context.pop_context()
+                # any way to get cluster name?  set this from the app-server level too?
+                block.context.push_context('database-topology', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            # forest-dump
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and block.context.at_top_context ('database-topology') and self.block(block_number + 1).first_line() == 'Forest Status':
+                block.context.pop_context()
+                block.context.push_context('forest-status', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            # trigger-dump
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Trigger Definitions':
+                block.context.pop_context()
+                block.context.push_context('trigger-definitions', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1 
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'CPF Domains':
+                block.context.pop_context()
+                block.context.push_context('cpf-domains', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'CPF Pipelines':
+                block.context.pop_context()
+                block.context.push_context('cpf-pipelines', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'FlexRep Domains':
+                block.context.pop_context()
+                block.context.push_context('flexrep-domains', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'SQL Schemas':
+                block.context.pop_context()
+                block.context.push_context('sql-schemas', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'SQL Views':
+                block.context.pop_context()
+                block.context.push_context('sql-views', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'XML Schemas':
+                block.context.pop_context()
+                block.context.push_context('xml-schemas', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Host Status':
+                block.context.push_context('host-status', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            # start of new host
+            ## TODO  figure it out, what level to pop to, or restart new context?
+            elif self.at_start_of_sequence (['bigsep', 'text', 'bigsep'], block_number) and self.block(block_number + 1).first_line().startswith ('Hostname:'):
+                block.context.pop_context()
+                block.context.pop_context()
+                hostname = re.sub (r'Hostname:\s+', '', self.block(block_number + 1).first_line())
+                block.context.push_context('host', {'host': hostname})
+                block.context.set_property('group', self.hostname_group_mapping.get(hostname, 'UnknownGroup'))
+                # mark info and skip it
+                self.set_next_block_subtype (block_number, 'hostinfo')
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Configuration':
+                block.context.pop_context()
+                block.context.push_context('configuration', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Log Files':
+                block.context.pop_context()
+                block.context.push_context('log-files', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Data Directory':
+                block.context.pop_context()
+                block.context.push_context('data-directory', {})
+                # mark heading and skip it
+                self.set_next_block_subtype (block_number)
+                block_number += 1
+                last_context = block.context
+            # set up a config file name
+            elif self.at_start_of_sequence (['subsep', 'text'], block_number) and block.context.at_top_context ('configuration') and self.block(block_number + 1).first_line().endswith('.xml'):
+                block.context.set_property ('filename', self.block (block_number + 1).first_line())
+                block.context.pop_property ('validation-results')
+                self.set_next_block_subtype (block_number, 'filename')
+                block_number += 1
+                last_context = block.context
+
+            # set up a config file validation
+            elif self.at_start_of_sequence (['subsep', 'text'], block_number) and block.context.at_top_context ('configuration') and self.block(block_number + 1).first_line().startswith('Validation results: '):
+                block.context.set_property ('validation-results', self.block(block_number + 1).first_line()[20:])
+                self.set_next_block_subtype (block_number, 'validation-results')
+                block_number += 1
+                last_context = block.context
+
+
+            elif self.at_start_of_sequence (['subsep', 'text'], block_number) and block.context.at_top_context ('configuration') and self.block(block_number + 1).first_line().startswith('Configuration file'): # doesn't exist
+                block.context.pop_property ('file')
+                block.context.pop_property ('filename')
+                block.context.pop_property ('validation-results')
+                last_context = block.context
+            # set up a log file
+            elif self.at_start_of_sequence (['subsep', 'text'], block_number) and block.context.at_top_context ('log-files') and self.block(block_number + 1).first_line().endswith('.txt'):
+                block.context.set_property ('filename', self.block (block_number + 1).first_line())
+                self.set_next_block_subtype (block_number, 'filename')
+                block_number += 1
+                last_context = block.context
+            # unclassified text block, must be some kind of file based on context?
+            elif block.type == 'text' and 'subtype' not in block.context.properties:
+                # these just get marked
+                if (   block.context.at_top_context ('database-topology')
+                    or block.context.at_top_context ('host-status')
+                    or block.context.at_top_context ('data-directory')
+                    or (block.context.at_top_context ('configuration') and not block.first_line().startswith ('Configuration file'))
+                    or (block.context.at_top_context ('log-files') and block.context.has_property ('filename'))
+                   ):
+                    block.context.set_property ('subtype', 'file')
+                # these extra db name from file text first line and remove that line
+                elif (   block.context.at_top_context ('trigger-definitions')
+                      or block.context.at_top_context ('cpf-domains')
+                      or block.context.at_top_context ('cpf-pipelines')
+                      or block.context.at_top_context ('flexrep-domains')
+                      or block.context.at_top_context ('sql-schemas')
+                      or block.context.at_top_context ('sql-views')
+                      or block.context.at_top_context ('xml-schemas')
+                    ):
+                    # gotta have more than the db name
+                    if len (block.text) > 1:
+                            block.context.set_property ('subtype', 'file')
+                            block.context.set_property ('database', block.text[0])
+                    else:  block.context.set_property ('subtype', 'empty-db')
+                # these extra db name from file text first line and remove that line
+                elif block.context.at_top_context ('forest-status'):
+                    block.context.set_property ('subtype', 'file')
+                    block.context.set_property ('forest-name', block.text[0])
+                    host_id = self.get_xml_value ('host-id', block.text)
+                    block.context.set_property ('host-id', host_id)
+                    # if this barfs KeyError ... is there a group with NO app-servers, so no mapping?  OK, default to the id
+                    block.context.set_property ('hostname', self.host_id_hostname_mapping.get(host_id, host_id))
+                elif block.context.at_top_context ('configuration') and block.first_line().startswith ('Configuration file'):
+                    block.context.set_property ('subtype', 'missing-file')
                 else:
-                    # start element
-                    if current_element == '---':
-                        #print ('> ohai ' + element_name)
-                        current_file = [line]
-                        current_element = element_name
-                    else:
-                        current_file.append (line)
-            elif current_file == '---': 
-                print ('ERROR: unowned line at about line ', block.start_line+line_count)
-            elif current_file != '---': 
-                current_file.append (line)
+                    block.context.set_property('subtype', 'unhandled-text')
+            else:
+                pass
 
-    def get_check_xml_blocks (self):
-        for block in self.blocks:
-            if block.type == 'appserver':
-                # TODO better check of needed properties for path
-                if 'group' in block.properties:
-                    self.get_check_xml (block)
-            #elif block.type == 'forest_status' or block.type == 'triggers' or block.type == 'cpf_domain' or block.type == 'cpf_pipelines':
-            elif block.type in ['forest_status', 'triggers', 'cpf_domain', 'cpf_pipelines', 'flexrep_domains', 'xml_schemas', 'sql_schemas', 'sql_views']:
-                # TODO better check of needed properties for path
-                if 'database' in block.properties:
-                    self.get_check_xml (block)
-            elif block.type == 'config_file':
-                # TODO better check of needed properties for path
-                if 'host' in block.context:
-                    self.get_check_xml (block)
-            elif block.type == 'host_status':
-                # TODO better check of needed properties for path
-                if 'host' in block.context:
-                    self.get_check_xml (block)
-
-    def write_file (self, path, filename, lines):
-        os.makedirs (path, 0o777, True)
-        filepath = path + '/' + filename
-        with open(filepath, 'w') as f:
-            for line in lines:
-                f.write (line + '\n')
-
-    def write_files (self):
-        for block in self.blocks:
-            if block.type == 'dump':
-                self.write_file ('Support-Dump', 'Support-Request.txt', block.text)
-                block.properties['written'] = True
-            elif block.subtype == 'database_topology':
-                self.write_file ('Support-Dump', 'Database-Topology.txt', block.text)
-                block.properties['written'] = True
-            elif block.type == 'config_file':
-                # TODO better check of needed properties for path
-                # Support-Dump/_group_/_host_/Configuration/_filename_
-                if 'group' in block.context:
-                    path = 'Support-Dump/' + block.context['group'] + '/' + block.context['host'] + '/Configuration'
-                    for filekey in block.files.keys():
-                        self.write_file (path, filekey, block.files[filekey][0])
-                    block.properties['written'] = True
-            elif block.type == 'log_file':
-                # TODO better check of needed properties for path
-                # Support-Dump/_group_/_host_/_filename_
-                if 'group' in block.context:
-                    path = 'Support-Dump/' + block.context['group'] + '/' + block.context['host'] + '/Logs'
-                    self.write_file (path, block.properties['filename'], block.text)
-                    block.properties['written'] = True
-            elif block.type == 'appserver':
-                # TODO better check of needed properties for path
-                # Support-Dump/Default/prodrlmkg01/App-Servers/App-Services-Status.xml
-                if 'group' in block.context:
-                    path = 'Support-Dump/' + block.context['group'] + '/' + block.properties['host'] + '/App-Servers'
-                    filename = block.properties['appserver'] + '-Status.xml'
-                    for filekey in block.files.keys():
-                        # filename matches files key how (in general)?
-                        self.write_file (path, filename, block.files[filekey][0])
-                    block.properties['written'] = True
-            elif block.type == 'host_status':
-                # TODO better check of needed properties for path
-                # Support-Dump/Default/prodrlmkg01/App-Servers/App-Services-Status.xml
-                if 'group' in block.context:
-                    path = 'Support-Dump/' + block.context['group'] + '/' + block.context['host']
-                    for filename in block.files.keys():
-                        self.write_file (path, filename, block.files[filename][0])
-                    block.properties['written'] = True
-            elif block.type == 'forest_status':
-                # TODO better check of needed properties for path
-                # Support-Dump/Default/prodrlmkg01/App-Servers/App-Services-Status.xml
-                if 'group' in block.context:
-                    path = 'Support-Dump/' + block.context['group'] + '/' + block.context['host'] + '/Forests/' + block.properties['database']
-                    for element in block.files.keys():
-                        filename = element.title() + '.xml'
-                        self.write_file (path, filename, block.files[element][0])
-                    block.properties['written'] = True
-            elif block.type == 'triggers' and block.files:
-                # TODO better check of needed properties for path
-                # Support-Dump/Default/prodrlmkg01/App-Servers/App-Services-Status.xml
-                if 'database' in block.properties:
-                    path = 'Support-Dump/Trigger/' + block.properties['database']
-                    # TODO assumption OK?
-                    for file in block.files['trgr:trigger']:
-                        trigger_id = self.get_xml_value ('trgr:trigger-id', file)
-                        self.write_file (path, f'Trigger-{trigger_id}.xml', file)
-                    block.properties['written'] = True
-            elif block.type == 'xml_schemas' and block.files:
-                # TODO better check of needed properties for path
-                # Support-Dump/Default/prodrlmkg01/App-Servers/App-Services-Status.xml
-                if 'database' in block.properties:
-                    path = 'Support-Dump/Schemas/' + block.properties['database']
-                    for element in block.files.keys():
-                        filename = element.title() + '.xml'
-                        self.write_file (path, filename, block.files[element][0])
-                    block.properties['written'] = True
+            block_number = block_number + 1
 
     def get_xml_value (self, element_name='xx-dd&&&<>', text_lines=[]):
         for line in text_lines:
             m = re.match(f'<{element_name}>(.*)</{element_name}>', line)
             if m:
                 return m.group(1)
-                        
-                        
+
+    def ready_files (self):
+        # go through subtype=file blocks, and save a list of the file as [filename, [start-line, end-line]] pairs
+        block_number = 0
+        saw_database_topology = False
+        while block_number < len (self.blocks):
+            block = self.blocks[block_number]
+            context = block.context
+            if block.type == 'text' and context.get_property ('subtype') == 'file':
+                if context.at_top_context ('app-servers'):
+                    path = f'{context.find_property("out-dir")}/{context.get_property("group")}/{context.get_property("host")}/App-Servers/{context.get_property("appserver")}-Status.xml'
+                    block.files.append ([path, [1, len(block.text) - 1]])
+                elif context.at_top_context ('dump-info'):
+                    path = f'{context.find_property("out-dir")}/Support-Request.txt'
+                    block.files.append ([path, [0, len(block.text) - 1]])
+                elif context.at_top_context ('database-topology'):
+                    block.context.set_property ('header', '===================================')
+                    path = f'{context.find_property("out-dir")}/Database-Topology.txt'
+                    block.files.append ([path, [0, len(block.text) - 1]])
+                    if saw_database_topology == False:
+                        saw_database_topology = True
+                    else: 
+                        block.context.set_property ('write-mode', 'append')
+                elif context.at_top_context ('configuration'):
+                    path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Configuration/{context.get_property("filename")}'
+                    block.files.append ([path, [0, len(block.text) - 1]])
+                elif context.at_top_context ('log-files'):
+                    filename = re.sub (r'.*/', '', context.get_property ('filename'))
+                    path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Logs/{filename}'
+                    block.files.append ([path, [0, len(block.text) - 1]])
+                elif context.at_top_context ('host-status'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('forest-status'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('cpf-domains'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('xml-schemas'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('sql-views'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('sql-schemas'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('trigger-definitions'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('cpf-pipelines'):
+                    self.get_check_xml (block)
+                elif context.at_top_context ('flexrep-domains'):
+                    self.get_check_xml (block)
+                else:
+                    block.context.set_property ('unhandled', 'true')
+                    print (f'ERROR:  unhandled text starting at line {block.start_line}', file=sys.stderr)
+            block_number = block_number + 1
+        
+    def get_check_xml (self, block):
+        lines = block.text
+        context = block.context
+        current_element = '---';
+        line_number = 0
+        start_line = -1
+        file_number = 1
+        for line in lines:
+            #print (f'block l{block.start_line}, line {line_number}')
+            # sometimes first line is not part of the file
+            if context.get_top_context() in ['xml-schemas','sql-schemas','trigger-definitions','forest-status','cpf-domains','cpf-pipelines','flexrep-domains'] and line_number == 0:
+                line_number += 1
+                continue
+            m = re.match(r'\s*<(/?)([^>\s]+)', line)
+            if m:
+                end_slash, element_name = m.group(1), m.group(2)
+                if end_slash:
+                    # end element
+                    if current_element == element_name:
+                        end_line = line_number
+                        # nice, matched up
+                        # get filename
+                        filename = element_name
+                        if context.at_top_context ('xml-schemas'):
+                            path = f'{context.find_property("out-dir")}/Schemas/{context.get_property("database")}/Schema-{file_number}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('flexrep-domains'):
+                            if (element_name == 'domain-status'):
+                                path = f'{context.find_property("out-dir")}/Flexrep/{context.get_property("database")}/Domain-Status-{file_number}.xml'
+                            elif (element_name == 'flexrep:configuration'):
+                                domain_id = self.get_xml_value ('flexrep:domain-id', block.text[start_line:end_line+1])
+                                path = f'{context.find_property("out-dir")}/Flexrep/{context.get_property("database")}/Flexrep-Configuration-{domain_id}.xml'
+                            else:
+                                print ('huh?  what is {element_name}', file=sys.stderr)
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('trigger-definitions'):
+                            trigger_id = self.get_xml_value ('trgr:trigger-id', block.text[start_line:end_line+1])
+                            path = f'{context.find_property("out-dir")}/Triggers/{context.get_property("database")}/Trigger-{trigger_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('sql-schemas'):
+                            schema_id = self.get_xml_value ('view:schema-id', block.text[start_line:end_line+1])
+                            path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/Schema-{schema_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('sql-views'):
+                            view_id = self.get_xml_value ('view:view-id', block.text[start_line:end_line+1])
+                            path = f'{context.find_property("out-dir")}/SQL/{context.get_property("database")}/View-{view_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('cpf-pipelines'):
+                            id = self.get_xml_value ('p:pipeline-id', block.text[start_line:end_line+1])
+                            path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Pipeline-{id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('cpf-domains'):
+                            if element_name == 'dom:domain':
+                                domain_id = self.get_xml_value ('dom:domain-id', block.text[start_line:end_line+1])
+                                path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Domain-{domain_id}.xml'
+                            elif element_name == 'dom:configuration':
+                                configuration_id = self.get_xml_value ('dom:config-id', block.text[start_line:end_line+1])
+                                path = f'{context.find_property("out-dir")}/CPF/{context.get_property("database")}/Configuration-{configuration_id}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('forest-status'):
+                            hostname = block.context.find_property("hostname")
+                            group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
+                            #path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{forest_name}/Forest-Status.xml'
+                            filename = element_name.title()
+                            path = f'{context.find_property("out-dir")}/{group}/{hostname}/Forests/{block.context.find_property("forest-name")}/{filename}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        elif context.at_top_context ('host-status'):
+                            hostname = block.context.find_property("host")
+                            group = self.hostname_group_mapping.get(hostname, 'UnknownGroup')
+                            filename = element_name.title()
+                            path = f'{context.find_property("out-dir")}/{group}/{hostname}/{filename}.xml'
+                            block.files.append ([path, [start_line, end_line]])
+                        current_element = '---';
+                        start_line = -1
+                        file_number += 1
+                else:
+                    # start element but gotta handle also singletons
+                    if current_element == '---':
+                        if re.fullmatch (r'<[^<]+/>\s*', line):
+                            print (f'WARNING? Singleton?: {line}', file=sys.stderr)
+                        else:
+                            # start a new one
+                            start_line = line_number
+                            current_element = element_name
+            elif start_line == -1:
+                print ('ERROR: unowned line at about line ', block.start_line + line_number)
+
+            line_number += 1
+
+
+    def write_files (self):
+        for block in self.blocks:
+            for file in block.files:
+                path, limits = file
+
+                m = re.match(r'^(.*)/(.*)', path)
+                dirs, filename = m.group(1), m.group(2)
+
+                os.makedirs (dirs, 0o777, True)
+                write_mode = 'a' if block.context.get_property ('write-mode') == 'append' else 'w' 
+                with open(path, write_mode) as f:
+                    if block.context.get_property ('header'):
+                        f.write (block.context.get_property ('header') + '\n')
+                    for line in block.text[limits[0]:limits[1] + 1]:
+                        f.write (line + '\n')
+
+
+
 blocks = DumpBlocks()
 line_number = 0
 
@@ -513,7 +606,7 @@ parser.add_argument ('-debug', dest='debug', default=False, help='debug output, 
 
 args = parser.parse_args()
 
-print (args)
+if args.debug:  print (args)
 
 with open(args.dumpfile, encoding='utf-8') as dumpfile:
     for line in dumpfile:
@@ -521,28 +614,25 @@ with open(args.dumpfile, encoding='utf-8') as dumpfile:
         str = line.strip()
         blocks.add_line (str, line_number)
 
-if args.debug:  blocks.dump()
+#if args.debug:  blocks.dump()
 
-if args.debug:  print ('create_sections')
-blocks.create_sections()
-if args.debug:  print ('create_subsections')
-blocks.create_subsections()
-if args.debug:  print ('reconstitute_database_topology')
-blocks.reconstitute_database_topology()
-if args.debug:  print ('remove_missing_configurations')
-blocks.remove_missing_configurations()
-if args.debug:  print ('context_run_through')
+
+# where do I do this?
+
+#        # get rid of leading blank lines in text blocks
+#        if block.type == 'text':
+#            while block.has_lines() and re.fullmatch (r'\s*', block.text[0]):
+#                block.text[0:1] = []
+
+
+
 blocks.context_run_through()
-if args.debug:  print ('setup_config_files')
-blocks.setup_config_files()
-if args.debug:  print ('setup_log_files')
-blocks.setup_log_files()
-if args.debug:  print ('get_check_xml_blocks')
-blocks.get_check_xml_blocks()
+blocks.ready_files()
+blocks.write_files()
 
 if args.debug:  blocks.dump()
 
-blocks.write_files()
+# blocks.write_files()
 
 
 
