@@ -571,7 +571,8 @@ class DumpBlocks:
                             start_line = line_number
                             current_element = element_name
             elif start_line == -1:
-                print ('ERROR: unowned line at about line ', block.start_line + line_number)
+                if not (start_line < len(block.text)-1 and len(block.text[start_line]) == 0):
+                    print ('ERROR: unowned line at about line ', block.start_line + line_number)
 
             line_number += 1
 
