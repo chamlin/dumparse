@@ -207,6 +207,16 @@ class DumpBlocks:
                 return re.sub (r'Report Host:\s+', '', line)
         return 'unknown-hostname-from-host-info'
 
+    # deal with sections, return next block and last context
+    def set_section (self, block_number, section_name):
+        block = self.block(block_number)
+        block.context.pop_context()
+        block.context.push_context(section_name.lower().replace (' ', '-'), {})
+        # mark heading and skip it
+        self.set_next_block_subtype (block_number)
+        return block_number+1, block.context
+
+
     # remove notices that a file isn't there (checks for all older versions)
     def context_run_through (self):
         block_number = 0
@@ -265,62 +275,11 @@ class DumpBlocks:
                 last_context = block.context
             # forest-dump
             elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and block.context.at_top_context ('database-topology') and self.block(block_number + 1).first_line() == 'Forest Status':
-                block.context.pop_context()
-                block.context.push_context('forest-status', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            # trigger-dump
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Trigger Definitions':
-                block.context.pop_context()
-                block.context.push_context('trigger-definitions', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1 
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'CPF Domains':
-                block.context.pop_context()
-                block.context.push_context('cpf-domains', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'CPF Pipelines':
-                block.context.pop_context()
-                block.context.push_context('cpf-pipelines', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'FlexRep Domains':
-                block.context.pop_context()
-                block.context.push_context('flexrep-domains', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'SQL Schemas':
-                block.context.pop_context()
-                block.context.push_context('sql-schemas', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'SQL Views':
-                block.context.pop_context()
-                block.context.push_context('sql-views', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'XML Schemas':
-                block.context.pop_context()
-                block.context.push_context('xml-schemas', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
+                block_number, last_context = self.set_section (block_number, self.block(block_number + 1).first_line()) 
+            # all similar section headings
+            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number)\
+                    and self.block(block_number + 1).first_line() in ('Trigger Definitions','CPF Domains','CPF Pipelines','FlexRep Domains','SQL Schemas','SQL Views','XML Schemas','Configuration','Log Files','Data Directory'):
+                block_number, last_context = self.set_section (block_number, self.block(block_number + 1).first_line()) 
             elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Host Status':
                 block.context.push_context('host-status', {})
                 # mark heading and skip it
@@ -337,27 +296,6 @@ class DumpBlocks:
                 block.context.set_property('group', self.hostname_group_mapping.get(hostname, 'UnknownGroup'))
                 # mark info and skip it
                 self.set_next_block_subtype (block_number, 'hostinfo')
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Configuration':
-                block.context.pop_context()
-                block.context.push_context('configuration', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Log Files':
-                block.context.pop_context()
-                block.context.push_context('log-files', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
-                block_number += 1
-                last_context = block.context
-            elif self.at_start_of_sequence (['subsep', 'text', 'subsep'], block_number) and self.block(block_number + 1).first_line() == 'Data Directory':
-                block.context.pop_context()
-                block.context.push_context('data-directory', {})
-                # mark heading and skip it
-                self.set_next_block_subtype (block_number)
                 block_number += 1
                 last_context = block.context
             # set up a config file name
