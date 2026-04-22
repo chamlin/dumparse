@@ -194,6 +194,7 @@ class DumpBlocks:
         'XML Schemas': 'xml schemas',
         'Configuration': 'configuration',
         'Log Files': 'log-files',
+        'Data Directory': 'data-directory',
     }
 
     # copies context over and sets the subtype property
@@ -401,6 +402,10 @@ class DumpBlocks:
                     filename = re.sub (r'.*/', '', context.get_property ('filename'))
                     path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/Logs/{filename}'
                     block.files.append ([path, [0, len(block.text) - 1]])
+                elif context.at_top_context ('data-directory'):
+                    #filename = re.sub (r'.*/', '', context.get_property ('filename'))
+                    path = f'{context.find_property("out-dir")}/{context.find_property("group")}/{context.find_property("host")}/DataDirectory.txt'
+                    block.files.append ([path, [0, len(block.text) - 1]])
                 elif context.at_top_context ('host-status'):
                     self.get_check_xml (block)
                 elif context.at_top_context ('forest-status'):
@@ -553,7 +558,7 @@ with open(args.dumpfile, encoding='utf-8') as dumpfile:
         str = line.strip()
         blocks.add_line (str, line_number)
 
-#if args.debug:  blocks.dump()
+# if args.debug:  blocks.dump()
 
 
 # where do I do this?
